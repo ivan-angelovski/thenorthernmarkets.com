@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Visualization</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #ffffff;
+        }
+        canvas { 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        .node-label {
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(0,0,0,0.2);
+            font-size: 12px;
+            pointer-events: none;
+            position: absolute;
+            display: none;
+            font-family: arial;
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+    </style>
+    <script src="https://unpkg.com/d3"></script>
+    <script src="https://unpkg.com/3d-force-graph"></script>
+</head>
+<body>
+    <div id="3d-graph"></div>
+    <div id="node-info" class="node-label"></div>
+
+    <script>
+        const nodeInfo = document.getElementById('node-info');
+        const highlightedNodes = [
+            'currentglobalnews.site',
+            '276 Tiffin St, Barrie, ON, L4N-2N4, CA',
+            'Amsterdam, North Holland, NH, The Netherlands, NL',
+            'beget.com'
+        ];
+
+        function moveLabel(event) {
+            const x = event.pageX + 10;
+            const y = event.pageY + 10;
+            
+            const labelWidth = nodeInfo.offsetWidth;
+            const labelHeight = nodeInfo.offsetHeight;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            
+            nodeInfo.style.left = Math.min(x, windowWidth - labelWidth - 10) + 'px';
+            nodeInfo.style.top = Math.min(y, windowHeight - labelHeight - 10) + 'px';
+        }
+
+        fetch('./network_data.json')
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                console.log('Data loaded:', data);
+                
+                if (!data || !data.nodes || !data.links) {
+                    throw new Error('Invalid data format');
+                }
+
+                const Graph = ForceGraph3D()
+                    (document.getElementById('3d-graph'))
+                    .graphData(data)
+                    .linkColor(() => 'rgba(255,255,255,0.9)')
+                    .linkWidth(1)
+                    .linkDirectionalArrowLength(0)
+                    .nodeColor(node => highlightedNodes.includes(node.id) ? '#FF0000' : '#EEEEEE')
+                    .nodeRelSize(4)
+                    .backgroundColor('#111111')
+                    .showNavInfo(false)
+                    // Enhanced 3D spread configuration
+                    .enableNodeDrag(true)
+                    .enableNavigationControls(true)
+                    .warmupTicks(100)
+                    .cooldownTicks(100)
+                    .d3Force('link', d3.forceLink()
+                        .id(d => d.id)
+                        .distance(50)
+                        .strength(0.8))
+                    .d3Force('charge', d3.forceManyBody()
+                        .strength(-50)
+                        .theta(0.9)
+                        .distanceMax(100))
+                    .d3Force('center', d3.forceCenter())
+                    .d3VelocityDecay(0.3)
+                    .onNodeHover(node => {
+                        if (node) {
+                            const links = data.links.filter(link => 
+                                link.source.id === node.id || link.target.id === node.id
+                            );
+                            
+                            const linkedNodes = links.reduce((acc, link) => {
+                                acc.add(link.source.id);
+                                acc.add(link.target.id);
+                                return acc;
+                            }, new Set());
+
+                            nodeInfo.innerHTML = `
+                                <strong>${node.id}</strong><br>
+                                <small>Type: ${node.type || 'Unknown'}</small>
+                                ${links.length > 0 ? '<br><br>Connected to:' : ''}
+                                ${Array.from(linkedNodes)
+                                    .filter(id => id !== node.id)
+                                    .map(id => `<br>→ ${id}`)
+                                    .join('')}
+                            `;
+                            nodeInfo.style.display = 'block';
+                            
+                            document.addEventListener('mousemove', moveLabel);
+                        } else {
+                            nodeInfo.style.display = 'none';
+                            document.removeEventListener('mousemove', moveLabel);
+                        }
+                    });
+
+                // Initialize with more spread out 3D positions and random velocities
+                const nodes = data.nodes.map(node => ({
+                    ...node,
+                    x: Math.random() * 200 - 100,
+                    y: Math.random() * 200 - 100,
+                    z: Math.random() * 200 - 100,
+                    vx: (Math.random() - 0.5) * 20,
+                    vy: (Math.random() - 0.5) * 20,
+                    vz: (Math.random() - 0.5) * 20
+                }));
+
+                Graph.graphData({
+                    nodes,
+                    links: data.links
+                });
+
+            })
+            .catch(error => {
+                console.error('Error loading or processing data:', error);
+                document.getElementById('3d-graph').innerHTML = 'Error loading visualization: ' + error.message;
+            });
+    </script>
+</body>
+</html>
